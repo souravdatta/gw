@@ -174,7 +174,7 @@ struct LetStmt : public Stmt
         debug_print();
         Val value = val_stmt->eval(env);
         env.set(var, value);
-        return Val::nil();
+        return value;
     }
 
     string var;
@@ -183,13 +183,26 @@ struct LetStmt : public Stmt
 
 struct AssignmentStmt : public Stmt
 {
-    AssignmentStmt(string s) : Stmt(s) {}
+    AssignmentStmt(string s, string lhs, Stmt *rhs): Stmt(s), var(lhs), val_stmt(rhs) {}
 
     virtual Val eval(Env& env)
     {
         debug_print();
-        return Val::nil();
+        Val value = val_stmt->eval(env);
+        Val temp;
+        bool f = env.lookup(var, &temp);
+
+        if (!f) {
+            cerr << "warn: assignment without LET has no effect!" << endl;
+            return Val::nil();
+        }
+
+        env.set(var, value);
+        return value;
     }
+
+    string var;
+    Stmt *val_stmt;
 };
 
 struct GotoStmt : public Stmt
@@ -299,8 +312,9 @@ int main()
 {
     Program p;
     Env env;
-    p.at(10, make_unique<LetStmt>("LET X = 10", "X", new NumStmt("10")));
+    p.at(10, make_unique<LetStmt>("LET X = 10.67", "X", new NumStmt("10.67")));
     p.at(12, make_unique<LetStmt>("LET Y = \"HELLO\"", "Y", new StrStmt("HELLO")));
+    p.at(20, make_unique<AssignmentStmt>("Y = \"GELLO\"", "Y", new StrStmt("GELLO")));
 
     //p.listing();
     p.eval(env);
