@@ -5,6 +5,8 @@
 #include <memory>
 #include <algorithm>
 
+#define DEBUG 0
+
 using namespace std;
 
 enum class Type
@@ -16,10 +18,6 @@ const string GOTOLINE = "GOTOLINE";
 
 struct Val
 {
-    double num;
-    string str;
-    Type type;
-
     Val()
     {
         num = 0;
@@ -55,6 +53,8 @@ struct Val
                 return to_string(num);
             case Type::NIL:
                 return "<nil>";
+            default:
+                return "";
         }
     }
 
@@ -67,6 +67,10 @@ struct Val
     ~Val()
     {
     }
+
+    double num;
+    string str;
+    Type type;
 };
 
 Val Val::nil()
@@ -133,18 +137,22 @@ public:
     void dump() const
     {
         for (const auto& p : myBindings) {
-            cout << ">> " << p.first << " " << p.second << endl;
+            cout << "Env> " << p.first << " " << p.second << endl;
         }
+    }
+    
+    void set_goto(int line)
+    {
+        this->set(GOTOLINE, Val::make_number(line));
     }
 private:
     map<string, Val> myBindings;
     vector<Env> children;
 };
 
-struct Stmt
+class Stmt
 {
-    string stmt_str;
-
+public:
     Stmt() : stmt_str("") {}
 
     Stmt(string s) : stmt_str(s) {}
@@ -153,20 +161,25 @@ struct Stmt
 
     void debug_print() const
     {
-        cout << "Eval: " << str() << endl;
+        if (DEBUG) {
+            cout << "Eval: " << as_string() << endl;
+        }
     }
 
-    string str() const
+    string as_string() const
     {
         return stmt_str;
     }
 
     virtual ~Stmt()
     {}
+protected:
+    string stmt_str;
 };
 
-struct LetStmt : public Stmt
+class LetStmt : public Stmt
 {
+public:
     LetStmt(string s, string lhs, Stmt *rhs): Stmt(s), var(lhs), val_stmt(rhs) {}
 
     virtual Val eval(Env& env)
@@ -176,13 +189,14 @@ struct LetStmt : public Stmt
         env.set(var, value);
         return value;
     }
-
+private:
     string var;
     Stmt *val_stmt;
 };
 
-struct AssignmentStmt : public Stmt
+class AssignmentStmt : public Stmt
 {
+public:
     AssignmentStmt(string s, string lhs, Stmt *rhs): Stmt(s), var(lhs), val_stmt(rhs) {}
 
     virtual Val eval(Env& env)
@@ -200,24 +214,32 @@ struct AssignmentStmt : public Stmt
         env.set(var, value);
         return value;
     }
-
+private:
     string var;
     Stmt *val_stmt;
 };
 
-struct GotoStmt : public Stmt
+class GotoStmt : public Stmt
 {
-    GotoStmt(string s) : Stmt(s) {}
+public:
+    GotoStmt(string s, Stmt *ln) : Stmt(s), line(ln) {}
 
     virtual Val eval(Env& env)
     {
         debug_print();
+        Val lineno = line->eval(env);
+        if (lineno.type == Type::NUMBER) {
+            env.set_goto((int)lineno.num);
+        }
         return Val::nil();
     }
+private:    
+    Stmt *line;
 };
 
-struct NumStmt : public Stmt
+class NumStmt : public Stmt
 {
+public:
     NumStmt(string s) : Stmt(s) {}
 
     virtual Val eval(Env& env)
@@ -227,8 +249,9 @@ struct NumStmt : public Stmt
     }
 };
 
-struct StrStmt : public Stmt
+class StrStmt : public Stmt
 {
+public:
     StrStmt(string s) : Stmt(s) {}
 
     virtual Val eval(Env& env)
@@ -236,6 +259,34 @@ struct StrStmt : public Stmt
         debug_print();
         return Val::make_string(stmt_str);
     }
+};
+
+class FuncallStmt : public Stmt
+{
+public:
+    FuncallStmt(string s, string fn_name, vector<Stmt*> fargs) : 
+        Stmt(s), name(fn_name), args(fargs) {}
+        
+    virtual Val eval(Env& env)
+    {
+        vector<Val> eargs;
+        eargs.reserve(args.size());
+        
+        for (auto x : args) {
+            eargs.push_back(x->eval(env));
+        }
+        
+        // Just do a PRINT
+        // PRINT, INPUT etc. will be builtin functions
+        for (auto x : eargs) {
+            cout << x << endl;
+        }
+        
+        return Val::nil();
+    }
+private:
+    vector<Stmt*> args;
+    string name;
 };
 
 class Program : public Stmt
@@ -284,7 +335,7 @@ public:
             auto f = statements.find(line);
 
             if (f != statements.end()) {
-                cout << line << " " << f->second->str() << endl;
+                cout << line << " " << f->second->as_string() << endl;
             }
         }
     }
@@ -312,10 +363,13 @@ int main()
 {
     Program p;
     Env env;
+    
     p.at(10, make_unique<LetStmt>("LET X = 10.67", "X", new NumStmt("10.67")));
     p.at(12, make_unique<LetStmt>("LET Y = \"HELLO\"", "Y", new StrStmt("HELLO")));
-    p.at(20, make_unique<AssignmentStmt>("Y = \"GELLO\"", "Y", new StrStmt("GELLO")));
-
+    p.at(14, make_unique<GotoStmt>("GOTO 20", new NumStmt("20")));
+    p.at(18, make_unique<AssignmentStmt>("X = \"GELLO\"", "Y", new StrStmt("GELLO")));
+    p.at(20, make_unique<AssignmentStmt>("Y = \"PELLO\"", "Y", new StrStmt("PELLO")));
+    p.at(22, make_unique<FuncallStmt>("PRINT \"Hoho\"", "PRINT", vector<Stmt*>{new StrStmt("Hoho")}));
     //p.listing();
     p.eval(env);
     env.dump();
