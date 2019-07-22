@@ -172,7 +172,9 @@ public:
     }
 
     virtual ~Stmt()
-    {}
+    {
+        //cout << "~DEL " << stmt_str << endl;
+    }
 protected:
     string stmt_str;
 };
@@ -180,7 +182,8 @@ protected:
 class LetStmt : public Stmt
 {
 public:
-    LetStmt(string s, string lhs, Stmt *rhs): Stmt(s), var(lhs), val_stmt(rhs) {}
+    LetStmt(string s, string lhs, unique_ptr<Stmt> rhs): 
+        Stmt(s), var(lhs), val_stmt(move(rhs)) {}
 
     virtual Val eval(Env& env)
     {
@@ -191,13 +194,14 @@ public:
     }
 private:
     string var;
-    Stmt *val_stmt;
+    unique_ptr<Stmt> val_stmt;
 };
 
 class AssignmentStmt : public Stmt
 {
 public:
-    AssignmentStmt(string s, string lhs, Stmt *rhs): Stmt(s), var(lhs), val_stmt(rhs) {}
+    AssignmentStmt(string s, string lhs, unique_ptr<Stmt> rhs): 
+        Stmt(s), var(lhs), val_stmt(move(rhs)) {}
 
     virtual Val eval(Env& env)
     {
@@ -216,13 +220,14 @@ public:
     }
 private:
     string var;
-    Stmt *val_stmt;
+    unique_ptr<Stmt> val_stmt;
 };
 
 class GotoStmt : public Stmt
 {
 public:
-    GotoStmt(string s, Stmt *ln) : Stmt(s), line(ln) {}
+    GotoStmt(string s, unique_ptr<Stmt> ln) : 
+        Stmt(s), line(move(ln)) {}
 
     virtual Val eval(Env& env)
     {
@@ -234,7 +239,7 @@ public:
         return Val::nil();
     }
 private:    
-    Stmt *line;
+    unique_ptr<Stmt> line;
 };
 
 class NumStmt : public Stmt
@@ -264,28 +269,36 @@ public:
 class FuncallStmt : public Stmt
 {
 public:
-    FuncallStmt(string s, string fn_name, vector<Stmt*> fargs) : 
-        Stmt(s), name(fn_name), args(fargs) {}
+    FuncallStmt(string s, string fn_name) : Stmt(s), name(fn_name)
+    {
+    }
+    
+    void add_arg(unique_ptr<Stmt> arg)
+    {
+        args.push_back(move(arg));
+    }
         
     virtual Val eval(Env& env)
     {
         vector<Val> eargs;
         eargs.reserve(args.size());
         
-        for (auto x : args) {
+        for (auto& x : args) {
             eargs.push_back(x->eval(env));
         }
         
         // Just do a PRINT
         // PRINT, INPUT etc. will be builtin functions
         for (auto x : eargs) {
-            cout << x << endl;
+            cout << x << " ";
         }
+        
+        cout << endl;
         
         return Val::nil();
     }
 private:
-    vector<Stmt*> args;
+    vector<unique_ptr<Stmt>> args;
     string name;
 };
 
@@ -364,14 +377,19 @@ int main()
     Program p;
     Env env;
     
-    p.at(10, make_unique<LetStmt>("LET X = 10.67", "X", new NumStmt("10.67")));
-    p.at(12, make_unique<LetStmt>("LET Y = \"HELLO\"", "Y", new StrStmt("HELLO")));
-    p.at(14, make_unique<GotoStmt>("GOTO 20", new NumStmt("20")));
-    p.at(18, make_unique<AssignmentStmt>("X = \"GELLO\"", "Y", new StrStmt("GELLO")));
-    p.at(20, make_unique<AssignmentStmt>("Y = \"PELLO\"", "Y", new StrStmt("PELLO")));
-    p.at(22, make_unique<FuncallStmt>("PRINT \"Hoho\"", "PRINT", vector<Stmt*>{new StrStmt("Hoho")}));
-    //p.listing();
+    p.at(10, make_unique<LetStmt>("LET X = 10.67", "X", make_unique<NumStmt>("10.67")));
+    p.at(12, make_unique<LetStmt>("LET Y = \"HELLO\"", "Y", make_unique<StrStmt>("HELLO")));
+    p.at(14, make_unique<GotoStmt>("GOTO 20", make_unique<NumStmt>("20")));
+    p.at(18, make_unique<AssignmentStmt>("X = \"GELLO\"", "Y", make_unique<StrStmt>("GELLO")));
+    p.at(20, make_unique<AssignmentStmt>("Y = \"PELLO\"", "Y", make_unique<StrStmt>("PELLO")));
+    unique_ptr<FuncallStmt> fstmt = make_unique<FuncallStmt>("PRINT \"HI\"", "PRINT");
+    fstmt->add_arg(make_unique<StrStmt>("HI"));
+    fstmt->add_arg(make_unique<NumStmt>("3.14"));
+    p.at(22, move(fstmt));
+    p.listing();
+    cout << "----" << endl;
     p.eval(env);
+    cout << "----" << endl;
     env.dump();
     return 0;
 }
