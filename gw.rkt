@@ -107,6 +107,10 @@
         (cons '= (λ (args)
                    (apply equal? (map (λ (a) (gw-eval (car args) a))
                                       (cdr args)))))
+        (cons '^ (λ (args)
+                   (let ([env (car args)])
+                     (expt (gw-eval env (second args))
+                           (gw-eval env (third args))))))                                    
         (cons 'end (λ (args) (nil)))
         (cons 'pconcat (λ (args)
                         (let* ([env (car args)]
@@ -411,13 +415,11 @@
 8 print 1, \"loop test\"
 10 let x = 10
 20 if x >= 1 then 30 else 60
-30 print 2, x
+30 print \">>\", x
 32 if x = 5 then 60
 40 let x = x - 1
 50 goto 20
 60 print 3, \"DONE!\"
 70 end")
   (gw program))
-
-
 
