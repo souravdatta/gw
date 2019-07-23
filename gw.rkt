@@ -1,5 +1,8 @@
 #lang racket
 
+(require parser-tools/lex)
+(require (prefix-in : parser-tools/lex-sre))
+(require parser-tools/yacc)
 
 (define prog-test-format
   '(program
@@ -30,7 +33,7 @@
 
 (define (program-listing prog)
   (if (program? prog)
-      (map (λ (x) (displayln (format "~a ~a" (first x) (third x)))) (program-sort prog))
+      (map (λ (x) (displayln (format "~a" (third x)))) (program-sort prog))
       (displayln "...")))
 
 (define (program-data prog)
@@ -96,15 +99,24 @@
                    (apply > (map (λ (a) (gw-eval (car args) a))
                                  (cdr args)))))
         (cons '<= (λ (args)
-                   (apply <= (map (λ (a) (gw-eval (car args) a))
-                                 (cdr args)))))
+                    (apply <= (map (λ (a) (gw-eval (car args) a))
+                                   (cdr args)))))
         (cons '>= (λ (args)
-                   (apply >= (map (λ (a) (gw-eval (car args) a))
-                                 (cdr args)))))
+                    (apply >= (map (λ (a) (gw-eval (car args) a))
+                                   (cdr args)))))
         (cons '= (λ (args)
                    (apply equal? (map (λ (a) (gw-eval (car args) a))
                                       (cdr args)))))
-        (cons 'end (λ (args) (nil)))))
+        (cons 'end (λ (args) (nil)))
+        (cons 'pconcat (λ (args)
+                        (let* ([env (car args)]
+                               [oargs (map (λ (a)
+                                             (gw-eval env a))
+                                           (cdr args))])
+                          (string-join (map (λ (x)
+                                              (format "~a" x))
+                                            oargs)
+                                       " "))))))
 
 (define (gw-eval env expr)
   (cond
@@ -150,6 +162,114 @@
   (let ([fn (get-env env fnsym)]
         [fnargs (map (λ (a) (gw-eval env a)) args)])
     (fn (cons env fnargs))))
+
+(define-tokens Tok [SYMBOL NUMBER STRING])
+(define-empty-tokens Tok* [LET PRINT GOTO END IF THEN ELSE
+                               PLUS MINUS MULT DIV POW
+                               LT LE GT GE EQ
+                               OPAREN CPAREN NEWLINE COMMA EOF])
+
+(define gw-lexer
+  (lexer
+   [(eof) (token-EOF)]
+   [(:or whitespace blank iso-control) (gw-lexer input-port)]
+   [(:or (:: #\l #\e #\t)
+         (:: #\L #\E #\T)) (token-LET)]
+   [(:or (:: #\p #\r #\i #\n #\t)
+         (:: #\P #\R #\I #\N #\T)) (token-PRINT)]
+   [(:or (:: #\g #\o #\t #\o)
+         (:: #\G #\O #\T #\O)) (token-GOTO)]
+   [(:or (:: #\e #\n #\d)
+         (:: #\E #\N #\D)) (token-END)]
+   [(:or (:: #\i #\f)
+         (:: #\I #\F)) (token-IF)]
+   [(:or (:: #\e #\l #\s #\e)
+         (:: #\E #\L #\S #\E)) (token-ELSE)]
+   [(:or (:: #\t #\h #\e #\n)
+         (:: #\T #\H #\E #\N)) (token-THEN)]
+   [#\+ (token-PLUS)]
+   [#\- (token-MINUS)]
+   [#\* (token-MULT)]
+   [#\/ (token-DIV)]
+   [#\^ (token-POW)]
+   [#\( (token-OPAREN)]
+   [#\) (token-CPAREN)]
+   [#\< (token-LT)]
+   [(:: #\< #\=) (token-LE)]
+   [#\> (token-GT)]
+   [(:: #\> #\=) (token-GE)]
+   [#\= (token-EQ)]
+   [#\, (token-COMMA)]
+   [(:: #\" any-string #\") (token-STRING (second (regexp-split #px"\"" lexeme)))]
+   [(:: alphabetic (:* (:or alphabetic numeric)))
+    (token-SYMBOL (string->symbol lexeme))]
+   [(:+ numeric) (token-NUMBER (string->number lexeme))]))
+
+(define gw-parser
+  (parser
+   (tokens Tok Tok*)
+   (start lined-statement)
+   (end EOF)
+   (error (λ (tok tname tval)
+            (displayln (format "Error in parsing at '~a', token ~a" tval tname))))
+   (precs (left PLUS MINUS LT LE GT GE EQ) (right MULT DIV POW))
+   (grammar
+    (expr ((NUMBER) $1)
+          ((SYMBOL) $1)
+          ((STRING) $1)
+          ((expr PLUS expr) (list '+ $1 $3))
+          ((expr MINUS expr) (list '- $1 $3))
+          ((expr MULT expr) (list '* $1 $3))
+          ((expr DIV expr) (list '/ $1 $3))
+          ((expr POW expr) (list '^ $1 $3))
+          ((expr LT expr) (list '< $1 $3))
+          ((expr LE expr) (list '<= $1 $3))
+          ((expr GT expr) (list '> $1 $3))
+          ((expr GE expr) (list '>= $1 $3))
+          ((expr EQ expr) (list '= $1 $3))
+          ((OPAREN expr CPAREN) $2))
+    
+    (statement
+     ((let-statement) $1)
+     ((print-statement) $1)
+     ((goto-statement) $1)
+     ((if-statement) $1)
+     ((END) (list 'end)))
+
+    (let-statement
+     ((LET SYMBOL EQ expr) (list 'let $2 $4)))
+
+    (print-statement
+     ((PRINT expr-list) (list 'print (cons 'pconcat $2))))
+
+    (goto-statement
+     ((GOTO NUMBER) (list 'goto $2)))
+
+    (if-statement
+     ((IF expr THEN NUMBER) (list 'if $2 (list 'goto $4) '(end)))
+     ((IF expr THEN NUMBER ELSE NUMBER) (list 'if $2 (list 'goto $4) (list 'goto $6))))
+
+    (expr-list
+     ((expr) (list $1))
+     ((expr COMMA expr-list) (append (if (list? $1) $1 (list $1)) $3)))
+
+    (lined-statement
+     ((NUMBER statement) (list $1 $2))))))
+
+(define (gw-parse-line s)
+  (let ([is (open-input-string s)])
+    (append (gw-parser (λ () (gw-lexer is))) (list s))))
+
+(define (gw-parse chunk)
+  (cons 'program
+        (map gw-parse-line
+             (filter (λ (x)
+                       (not (string=? x "")))
+                     (regexp-split #px"\n" chunk)))))
+
+(define (gw chunk)
+  (let ([e (make-env #:defaults (make-defaults))])
+    (program-exec e (gw-parse chunk))))
 
 (define (test1)
   (define e (make-env #:defaults (make-defaults)))
@@ -273,3 +393,31 @@
               (70 (end) "end")))
   (displayln (program-listing p))
   (program-exec e p))
+
+(define (test11)
+  (define program "
+8 print 1, \"loop test\"
+10 let x = 10
+20 if x >= 1 then 30 else 60
+30 print 2, x
+40 let x = x - 1
+50 goto 20
+60 print 3, \"DONE!\"
+70 end")
+  (gw-parse program))
+
+(define (test12)
+  (define program "
+8 print 1, \"loop test\"
+10 let x = 10
+20 if x >= 1 then 30 else 60
+30 print 2, x
+32 if x = 5 then 60
+40 let x = x - 1
+50 goto 20
+60 print 3, \"DONE!\"
+70 end")
+  (gw program))
+
+
+
