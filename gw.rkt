@@ -18,6 +18,7 @@
 
 (define (program? prog)
   (and (eq? (car prog) 'program)
+       (not (null? (cdr prog)))
        (list? (cadr prog))))
 
 (define (program-sort prog)
@@ -422,4 +423,24 @@
 60 print 3, \"DONE!\"
 70 end")
   (gw program))
+
+(define (repl #:program [program ""])
+  (let ([program-string program])
+    (display "OK ")
+    (let ([line (read-line)])
+      (cond
+        ((eof-object? line) (displayln "BYE"))
+        ((string=? line "")
+         (repl #:program program-string))
+        ((string=? line "list")
+         (let ([p (gw-parse program-string)])
+           (begin
+             (displayln program-string)
+             (repl #:program program-string))))
+        ((string=? line "run")
+         (begin
+           (gw program-string)
+           (repl #:program program-string)))
+        (else (repl #:program (string-append program-string "\n" line)))))))
+
 
