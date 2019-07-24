@@ -128,6 +128,7 @@
 
 (define (gw-eval env expr)
   (cond
+    ((nil? expr) expr)
     ((number? expr) expr)
     ((string? expr) expr)
     ((symbol? expr) (get-env env expr))
@@ -143,7 +144,7 @@
        (else (gw-apply env
                        (car expr)
                        (cdr expr)))))
-    (else (error "WAT??"))))
+    (else (error (format "~a" expr)))))
 
 (define (let-eval env expr)
   (let ([sym (second expr)]
@@ -219,7 +220,7 @@
    (start lined-statement)
    (end EOF)
    (error (λ (tok tname tval)
-            (displayln (format "Error in parsing at '~a', token ~a" tval tname))))
+            (format "Error in parsing at '~a', token ~a" tval tname)))
    (precs (left PLUS MINUS LT LE GT GE EQ) (right MULT DIV POW))
    (grammar
     (expr ((NUMBER) $1)
@@ -263,6 +264,64 @@
 
     (lined-statement
      ((NUMBER statement) (list $1 $2))))))
+
+(define gw-line-parser
+  (parser
+   (tokens Tok Tok*)
+   (start statement)
+   (end EOF)
+   (error (λ (tok tname tval)
+            (format "Error in parsing at '~a', token ~a" tval tname)))
+   (precs (left PLUS MINUS LT LE GT GE EQ) (right MULT DIV POW))
+   (grammar
+    (expr ((NUMBER) $1)
+          ((SYMBOL) $1)
+          ((STRING) $1)
+          ((expr PLUS expr) (list '+ $1 $3))
+          ((expr MINUS expr) (list '- $1 $3))
+          ((expr MULT expr) (list '* $1 $3))
+          ((expr DIV expr) (list '/ $1 $3))
+          ((expr POW expr) (list '^ $1 $3))
+          ((expr LT expr) (list '< $1 $3))
+          ((expr LE expr) (list '<= $1 $3))
+          ((expr GT expr) (list '> $1 $3))
+          ((expr GE expr) (list '>= $1 $3))
+          ((expr EQ expr) (list '= $1 $3))
+          ((OPAREN expr CPAREN) $2))
+    
+    (statement
+     ((let-statement) $1)
+     ((print-statement) $1)
+     ((goto-statement) $1)
+     ((if-statement) $1)
+     ((END) (list 'end)))
+
+    (let-statement
+     ((LET SYMBOL EQ expr) (list 'let $2 $4)))
+
+    (print-statement
+     ((PRINT expr-list) (list 'print (cons 'pconcat $2))))
+
+    (goto-statement
+     ((GOTO NUMBER) (list 'goto $2)))
+
+    (if-statement
+     ((IF expr THEN NUMBER) (list 'if $2 (list 'goto $4) '(end)))
+     ((IF expr THEN NUMBER ELSE NUMBER) (list 'if $2 (list 'goto $4) (list 'goto $6))))
+
+    (expr-list
+     ((expr) (list $1))
+     ((expr COMMA expr-list) (append (if (list? $1) $1 (list $1)) $3)))
+
+    (lined-statement
+     ((NUMBER statement) (list $1 $2))))))
+
+(define (gw-repl-parse s)
+  (let ([is (open-input-string s)])
+    (gw-line-parser (λ () (gw-lexer is)))))
+
+(define (gw-repl-exec env s)
+  (gw-eval env (gw-repl-parse s)))
 
 (define (gw-parse-line s)
   (let ([is (open-input-string s)])
@@ -427,7 +486,10 @@
 70 end")
   (gw program))
 
-(define (repl #:program [program ""])
+
+(define global-env (make-env #:defaults (make-defaults)))
+
+(define (repl #:program [program ""]) 
   (let ([program-string program])
     (display "OK ")
     (let ([line (read-line)])
@@ -442,7 +504,7 @@
         ((string=? line "run")
          (begin
            (with-handlers ([exn:fail? (λ (e)
-                                        (displayln "fail"))])
+                                        (displayln " "))])
              (gw program-string))
            (repl #:program program-string)))
         ((string=? line "exit")
@@ -451,9 +513,13 @@
          (set! program-string "")
          (repl #:program program-string))
         (else
-         (with-handlers ([exn:fail? (λ (e)
-                                      (displayln "fail")
-                                      (repl #:program program-string))])
+         (with-handlers ([exn:fail? (λ (e1)
+                                      (with-handlers ([exn:fail?
+                                                       (λ (e2)
+                                                         (displayln " ")
+                                                         (repl #:program program-string))])
+                                        (gw-repl-exec global-env line)
+                                        (repl #:program program-string)))])
            (gw-parse-line line)
            (repl #:program (string-append program-string "\n" line))))))))
 
