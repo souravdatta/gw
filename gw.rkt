@@ -441,13 +441,20 @@
            (repl #:program program-string)))
         ((string=? line "run")
          (begin
-           (gw program-string)
+           (with-handlers ([exn:fail? (λ (e)
+                                        (displayln "fail"))])
+             (gw program-string))
            (repl #:program program-string)))
         ((string=? line "exit")
          (displayln "BYE"))
         ((string=? line "new")
          (set! program-string "")
          (repl #:program program-string))
-        (else (repl #:program (string-append program-string "\n" line)))))))
+        (else
+         (with-handlers ([exn:fail? (λ (e)
+                                      (displayln "fail")
+                                      (repl #:program program-string))])
+           (gw-parse-line line)
+           (repl #:program (string-append program-string "\n" line))))))))
 
 (repl)
