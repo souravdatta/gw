@@ -34,8 +34,11 @@
 
 (define (program-listing prog)
   (if (program? prog)
-      (map (λ (x) (displayln (format "~a" (third x)))) (program-sort prog))
-      (displayln "...")))
+      (let* ([pdata (program-data prog)]
+             [keys (sort (hash-keys (first pdata)) <)])
+        (for ([k keys])
+          (displayln (format "~a" (second (hash-ref (first pdata) k))))))
+      (displayln " ")))
 
 (define (program-data prog)
   (let* ([sorted (program-sort prog)]
@@ -434,7 +437,7 @@
          (repl #:program program-string))
         ((string=? line "list")
          (begin
-           (displayln program-string)
+           (program-listing (gw-parse program-string))
            (repl #:program program-string)))
         ((string=? line "run")
          (begin
