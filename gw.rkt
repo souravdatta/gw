@@ -114,14 +114,14 @@
                            (gw-eval env (third args))))))                                    
         (cons 'end (λ (args) (nil)))
         (cons 'pconcat (λ (args)
-                        (let* ([env (car args)]
-                               [oargs (map (λ (a)
-                                             (gw-eval env a))
-                                           (cdr args))])
-                          (string-join (map (λ (x)
-                                              (format "~a" x))
-                                            oargs)
-                                       " "))))))
+                         (let* ([env (car args)]
+                                [oargs (map (λ (a)
+                                              (gw-eval env a))
+                                            (cdr args))])
+                           (string-join (map (λ (x)
+                                               (format "~a" x))
+                                             oargs)
+                                        " "))))))
 
 (define (gw-eval env expr)
   (cond
@@ -433,14 +433,18 @@
         ((string=? line "")
          (repl #:program program-string))
         ((string=? line "list")
-         (let ([p (gw-parse program-string)])
-           (begin
-             (displayln program-string)
-             (repl #:program program-string))))
+         (begin
+           (displayln program-string)
+           (repl #:program program-string)))
         ((string=? line "run")
          (begin
            (gw program-string)
            (repl #:program program-string)))
+        ((string=? line "exit")
+         (displayln "BYE"))
+        ((string=? line "new")
+         (set! program-string "")
+         (repl #:program program-string))
         (else (repl #:program (string-append program-string "\n" line)))))))
 
-
+(repl)
