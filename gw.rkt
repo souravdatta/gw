@@ -334,9 +334,54 @@
                        (not (string=? x "")))
                      (regexp-split #px"\n" chunk)))))
 
-(define (gw chunk)
-  (let ([e (make-env #:defaults (make-defaults))])
+(define (gw chunk #:env [env #f])
+  (let ([e (if env env (make-env #:defaults (make-defaults)))])
     (program-exec e (gw-parse chunk))))
+
+(define global-env (make-env #:defaults (make-defaults)))
+
+(define global-program-string "")
+
+(define (repl) 
+  (display "OK ")
+  (let ([line (read-line)])
+    (cond
+      ((eof-object? line) (displayln "BYE"))
+      ((string=? line "")
+       (repl))
+      ((string=? line "list")
+       (begin
+         (program-listing (gw-parse  global-program-string))
+         (repl)))
+      ((string=? line "run")
+       (begin
+         (with-handlers ([exn:fail? (λ (e)
+                                      (displayln " "))])
+           (gw global-program-string #:env global-env))
+         (repl)))
+      ((string=? line "exit")
+       (displayln "BYE"))
+      ((string=? line "new")
+       (set!  global-program-string "")
+       (repl))
+      (else
+       (with-handlers ([exn:fail? (λ (e1)
+                                    (with-handlers ([exn:fail?
+                                                     (λ (e2)
+                                                       (displayln " ")
+                                                       (repl))])
+                                      (gw-repl-exec global-env line)
+                                      (repl)))])
+         (gw-parse-line line)
+         (set! global-program-string (string-append
+                                       global-program-string
+                                       "\n"
+                                       line))
+         (repl))))))
+
+(repl)
+
+;; All tests
 
 (define (test1)
   (define e (make-env #:defaults (make-defaults)))
@@ -486,41 +531,3 @@
 70 end")
   (gw program))
 
-
-(define global-env (make-env #:defaults (make-defaults)))
-
-(define (repl #:program [program ""]) 
-  (let ([program-string program])
-    (display "OK ")
-    (let ([line (read-line)])
-      (cond
-        ((eof-object? line) (displayln "BYE"))
-        ((string=? line "")
-         (repl #:program program-string))
-        ((string=? line "list")
-         (begin
-           (program-listing (gw-parse program-string))
-           (repl #:program program-string)))
-        ((string=? line "run")
-         (begin
-           (with-handlers ([exn:fail? (λ (e)
-                                        (displayln " "))])
-             (gw program-string))
-           (repl #:program program-string)))
-        ((string=? line "exit")
-         (displayln "BYE"))
-        ((string=? line "new")
-         (set! program-string "")
-         (repl #:program program-string))
-        (else
-         (with-handlers ([exn:fail? (λ (e1)
-                                      (with-handlers ([exn:fail?
-                                                       (λ (e2)
-                                                         (displayln " ")
-                                                         (repl #:program program-string))])
-                                        (gw-repl-exec global-env line)
-                                        (repl #:program program-string)))])
-           (gw-parse-line line)
-           (repl #:program (string-append program-string "\n" line))))))))
-
-(repl)
